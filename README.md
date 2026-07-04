@@ -175,3 +175,10 @@ The long-term goal is to evolve this project into a production-ready AI recommen
 # ⭐ If you like this project
 
 Please consider giving it a ⭐.
+
+## Key Learnings
+
+- Recommendation systems require more than model accuracy.
+- Ranking quality matters more than predicting exact ratings.
+- Offline metrics should be connected to business outcomes.
+- Production recommenders must handle cold-start users, bias, latency, and feedback loops.
