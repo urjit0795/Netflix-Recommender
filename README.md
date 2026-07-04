@@ -1,85 +1,177 @@
-# 🎬 Netflix Hybrid Recommendation System
+<div align="center">
 
-An end-to-end movie recommendation system inspired by Netflix, built using multiple recommendation techniques including popularity-based filtering, content-based filtering, collaborative filtering, personalized recommendations, and hybrid recommendation systems.
+# 🎬 Netflix AI Recommendation Platform
 
-The project also includes evaluation metrics and an interactive Streamlit application for exploring recommendations.
+### From Classical Recommendation Systems to Production-Ready Generative AI
 
----
+![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)
+![Scikit-Learn](https://img.shields.io/badge/Scikit--Learn-ML-orange?logo=scikit-learn)
+![Streamlit](https://img.shields.io/badge/Streamlit-App-red?logo=streamlit)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-# 🚀 Features
+<img src="docs/images/banner.png" width="900">
 
-## ✅ Popularity-Based Recommendations
-Recommend top-rated and most popular movies based on user ratings.
-
-## ✅ Content-Based Filtering
-Recommend movies similar to a selected movie using:
-- TF-IDF vectorization
-- Cosine similarity
-- Movie metadata such as genre and title
-
-## ✅ Collaborative Filtering
-Recommend movies using:
-- User-item interaction matrix
-- Item-item similarity
-- Cosine similarity
-
-## ✅ Personalized Recommendations
-Generate recommendations tailored to a specific user based on historical ratings.
-
-## ✅ Hybrid Recommendation System
-Combine:
-- Content-based filtering
-- Collaborative filtering
-
-to generate stronger recommendations.
-
-## ✅ Evaluation Metrics
-Implemented:
-- Precision@K
-- Recall@K
-
-to measure recommendation quality.
-
-## ✅ Interactive Streamlit App
-Users can:
-- Search for movies
-- Get similar movie recommendations
-- Get personalized recommendations
-- Use hybrid recommendations
-- Explore popular movies
+</div>
 
 ---
 
-# 🛠️ Tech Stack
+# 🚀 Project Overview
 
-- Python
-- Pandas
-- NumPy
-- Scikit-learn
-- Streamlit
-- Matplotlib
+Netflix AI Recommendation Platform is an end-to-end recommendation system inspired by Netflix.
+
+Rather than stopping at a traditional recommender system, this repository documents the journey of transforming a classical machine learning recommendation engine into a modern Applied AI platform using:
+
+- Recommendation Systems
+- Semantic Search
+- Vector Databases
+- Retrieval-Augmented Generation (RAG)
+- LLM Evaluation
+- AI Agents
+- Production Deployment
+
+---
+
+# 🎯 Why this project?
+
+Modern recommendation systems are no longer just collaborative filtering.
+
+They increasingly combine:
+
+- 🧠 Embeddings
+- 🔍 Semantic Retrieval
+- 🤖 Large Language Models
+- 📊 Evaluation Frameworks
+- ☁️ Cloud-native Deployment
+
+This repository demonstrates that evolution.
+
+---
+
+# ✨ Current Features
+
+| Feature | Status |
+|----------|--------|
+| Popularity Recommendation | ✅ |
+| Content-Based Filtering | ✅ |
+| Collaborative Filtering | ✅ |
+| Personalized Recommendation | ✅ |
+| Hybrid Recommendation | ✅ |
+| Precision@K | ✅ |
+| Recall@K | ✅ |
+| Streamlit UI | ✅ |
+
+---
+
+# 🏗 System Architecture
+
+<p align="center">
+
+<img src="docs/images/architecture.png" width="850">
+
+</p>
+
+---
+
+# 📷 Demo
+
+### Home Page
+
+<img src="docs/images/home.png" width="800">
+
+### Recommendations
+
+<img src="docs/images/recommendation.png" width="800">
+
+---
+
+# 🧰 Tech Stack
+
+| Category | Technologies |
+|------------|---------------------------|
+| Language | Python |
+| ML | Scikit-Learn |
+| Data | Pandas, NumPy |
+| Visualization | Matplotlib |
+| Web App | Streamlit |
 
 ---
 
 # 📂 Project Structure
 
 ```text
-NETFLIX_RECOMMENDATION/
-│
-├── app.py
-├── requirements.txt
-├── README.md
-│
+Netflix-AI-Recommendation-Platform/
+
+│── app.py
+│── requirements.txt
+│── README.md
+
 ├── data/
-│   ├── movies.csv
-│   ├── users.csv
-│   └── ratings.csv
-│
+
 ├── notebooks/
-│   └── netflix_recommendation.ipynb
-│
+
 ├── recommender/
-│   ├── engine.py
-│   └── evaluation.py
-│
+
+├── docs/
+│     ├── images/
+│     ├── architecture.md
+│     └── roadmap.md
+
 └── outputs/
+```
+
+---
+
+# 🗺 Roadmap
+
+| Phase | Status |
+|--------|--------|
+| Classical Recommendation Systems | ✅ |
+| Semantic Search | 🚧 |
+| Sentence Transformers | ⏳ |
+| FAISS / ChromaDB | ⏳ |
+| Retrieval-Augmented Generation | ⏳ |
+| LLM Evaluation (DeepEval) | ⏳ |
+| AI Agent | ⏳ |
+| FastAPI Deployment | ⏳ |
+| Docker | ⏳ |
+| AWS Deployment | ⏳ |
+
+---
+
+# 🔬 Evaluation
+
+Implemented metrics
+
+- Precision@K
+
+- Recall@K
+
+Upcoming
+
+- Faithfulness
+
+- Answer Relevance
+
+- Context Precision
+
+- Context Recall
+
+---
+
+# 📈 Future Vision
+
+The long-term goal is to evolve this project into a production-ready AI recommendation platform capable of:
+
+- Conversational movie recommendations
+- Natural language search
+- Explainable AI
+- AI Agents
+- LLM Evaluation
+- Production APIs
+- Cloud deployment
+
+---
+
+# ⭐ If you like this project
+
+Please consider giving it a ⭐.
