@@ -3,39 +3,88 @@ import streamlit as st
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-st.title("Netflix-Style Movie Recommendation System")
 
-movies = pd.read_csv("data/movies.csv")
-users = pd.read_csv("data/users.csv")
-ratings = pd.read_csv("data/ratings.csv")
-
-# Content-based setup
-movies["content"] = (
-    movies["title"].fillna("") + " " +
-    movies["genre"].fillna("") + " " +
-    movies["release_year"].astype(str)
+# --------------------------------------------------
+# Page Configuration
+# --------------------------------------------------
+st.set_page_config(
+    page_title="Netflix Recommendation System",
+    page_icon="🎬",
+    layout="wide"
 )
 
-tfidf = TfidfVectorizer(stop_words="english")
-tfidf_matrix = tfidf.fit_transform(movies["content"])
-content_similarity = cosine_similarity(tfidf_matrix, tfidf_matrix)
-
-# Collaborative filtering setup
-user_movie_matrix = ratings.pivot_table(
-    index="user_id",
-    columns="movie_id",
-    values="rating"
-).fillna(0)
-
-movie_similarity = cosine_similarity(user_movie_matrix.T)
-
-movie_similarity_df = pd.DataFrame(
-    movie_similarity,
-    index=user_movie_matrix.columns,
-    columns=user_movie_matrix.columns
+st.title("🎬 Netflix Recommendation System")
+st.write(
+    "An interactive app to explore movie recommendations using popularity-based, "
+    "content-based, collaborative filtering, and hybrid recommendation methods."
 )
 
 
+# --------------------------------------------------
+# Load Data
+# --------------------------------------------------
+@st.cache_data
+def load_data():
+    movies_df = pd.read_csv("data/movies.csv")
+    users_df = pd.read_csv("data/users.csv")
+    ratings_df = pd.read_csv("data/ratings.csv")
+    return movies_df, users_df, ratings_df
+
+
+movies, users, ratings = load_data()
+
+
+# --------------------------------------------------
+# Content-Based Setup
+# --------------------------------------------------
+@st.cache_resource
+def build_content_similarity(movies_df):
+    movies_df = movies_df.copy()
+
+    movies_df["content"] = (
+        movies_df["title"].fillna("") + " " +
+        movies_df["genre"].fillna("") + " " +
+        movies_df["release_year"].astype(str)
+    )
+
+    tfidf = TfidfVectorizer(stop_words="english")
+    tfidf_matrix = tfidf.fit_transform(movies_df["content"])
+    similarity_matrix = cosine_similarity(tfidf_matrix, tfidf_matrix)
+
+    return similarity_matrix
+
+
+content_similarity = build_content_similarity(movies)
+
+
+# --------------------------------------------------
+# Collaborative Filtering Setup
+# --------------------------------------------------
+@st.cache_resource
+def build_collaborative_similarity(ratings_df):
+    user_movie_matrix_df = ratings_df.pivot_table(
+        index="user_id",
+        columns="movie_id",
+        values="rating"
+    ).fillna(0)
+
+    similarity_matrix = cosine_similarity(user_movie_matrix_df.T)
+
+    movie_similarity_df = pd.DataFrame(
+        similarity_matrix,
+        index=user_movie_matrix_df.columns,
+        columns=user_movie_matrix_df.columns
+    )
+
+    return user_movie_matrix_df, movie_similarity_df
+
+
+user_movie_matrix, movie_similarity_df = build_collaborative_similarity(ratings)
+
+
+# --------------------------------------------------
+# Recommendation Functions
+# --------------------------------------------------
 def recommend_popular_movies(top_n=10, min_ratings=5):
     movie_stats = (
         ratings.groupby("movie_id")
@@ -88,7 +137,9 @@ def recommend_for_user(user_id, top_n=10):
             if similar_movie_id in watched_movies:
                 continue
 
-            scores[similar_movie_id] = scores.get(similar_movie_id, 0) + similarity_score * rating
+            scores[similar_movie_id] = (
+                scores.get(similar_movie_id, 0) + similarity_score * rating
+            )
 
     if not scores:
         return pd.DataFrame()
@@ -103,7 +154,9 @@ def recommend_for_user(user_id, top_n=10):
     return movies[movies["movie_id"].isin(recommended_ids)]
 
 
-def hybrid_recommend(user_id, movie_title, top_n=10, content_weight=0.5, cf_weight=0.5):
+def hybrid_recommend(user_id, movie_title, top_n=10, content_weight=0.5):
+    cf_weight = 1.0 - content_weight
+
     matches = movies[movies["title"].str.lower().str.contains(movie_title.lower())]
 
     if matches.empty or user_id not in user_movie_matrix.index:
@@ -111,6 +164,9 @@ def hybrid_recommend(user_id, movie_title, top_n=10, content_weight=0.5, cf_weig
 
     movie_idx = matches.index[0]
     movie_id = movies.loc[movie_idx, "movie_id"]
+
+    if movie_id not in movie_similarity_df.columns:
+        return pd.DataFrame()
 
     content_scores = pd.Series(
         content_similarity[movie_idx],
@@ -129,10 +185,48 @@ def hybrid_recommend(user_id, movie_title, top_n=10, content_weight=0.5, cf_weig
 
     combined_scores = combined_scores.drop(labels=watched_movies, errors="ignore")
 
-    recommended_ids = combined_scores.sort_values(ascending=False).head(top_n).index
+    recommended_ids = (
+        combined_scores
+        .sort_values(ascending=False)
+        .head(top_n)
+        .index
+    )
 
     return movies[movies["movie_id"].isin(recommended_ids)]
 
+
+def display_recommendations(result, include_ratings=False):
+    if result.empty:
+        st.warning("No recommendations found. Try a different input.")
+        return
+
+    if include_ratings:
+        display_cols = [
+            "title",
+            "genre",
+            "release_year",
+            "avg_user_rating",
+            "rating_count"
+        ]
+    else:
+        display_cols = ["title", "genre", "release_year"]
+
+    available_cols = [col for col in display_cols if col in result.columns]
+
+    st.dataframe(
+        result[available_cols],
+        use_container_width=True,
+        hide_index=True
+    )
+
+
+# --------------------------------------------------
+# Sidebar
+# --------------------------------------------------
+st.sidebar.title("Recommendation Settings")
+st.sidebar.write(
+    "Compare different recommendation strategies using movie ratings and metadata."
+)
 
 option = st.sidebar.selectbox(
     "Choose recommendation type",
@@ -146,41 +240,103 @@ option = st.sidebar.selectbox(
 
 top_n = st.sidebar.slider("Number of recommendations", 5, 20, 10)
 
+
+# --------------------------------------------------
+# Main App
+# --------------------------------------------------
 if option == "Popular Movies":
-    st.subheader("Popular Movies")
+    st.subheader("🔥 Popular Movies")
+    st.info(
+        "This method recommends movies with high average ratings, while filtering out "
+        "movies with very few ratings."
+    )
+
     min_ratings = st.slider("Minimum ratings", 1, 20, 5)
-    result = recommend_popular_movies(top_n=top_n, min_ratings=min_ratings)
-    st.dataframe(result)
+
+    result = recommend_popular_movies(
+        top_n=top_n,
+        min_ratings=min_ratings
+    )
+
+    display_recommendations(result, include_ratings=True)
+
 
 elif option == "Content-Based Recommendation":
-    st.subheader("Content-Based Recommendation")
+    st.subheader("🎯 Content-Based Recommendation")
+    st.info(
+        "Content-based filtering recommends movies similar to a selected movie using "
+        "title, genre, and release year."
+    )
+
     movie_title = st.selectbox("Choose a movie", movies["title"].tolist())
 
-    result = recommend_content_based(movie_title, top_n=top_n)
-    st.dataframe(result)
+    result = recommend_content_based(
+        movie_title=movie_title,
+        top_n=top_n
+    )
+
+    display_recommendations(result)
+
 
 elif option == "User-Based Personalized Recommendation":
-    st.subheader("Personalized User Recommendations")
-    user_id = st.selectbox("Choose user ID", sorted(ratings["user_id"].unique()))
+    st.subheader("👤 Personalized User Recommendations")
+    st.info(
+        "Collaborative filtering recommends movies based on rating patterns from "
+        "similar users and movies."
+    )
 
-    result = recommend_for_user(user_id=user_id, top_n=top_n)
-    st.dataframe(result)
+    user_id = st.selectbox(
+        "Choose user ID",
+        sorted(ratings["user_id"].unique())
+    )
+
+    result = recommend_for_user(
+        user_id=user_id,
+        top_n=top_n
+    )
+
+    display_recommendations(result)
+
 
 elif option == "Hybrid Recommendation":
-    st.subheader("Hybrid Recommendation")
+    st.subheader("🧠 Hybrid Recommendation")
+    st.info(
+        "Hybrid recommendation combines content similarity and collaborative filtering "
+        "to balance personalization and movie similarity."
+    )
 
-    user_id = st.selectbox("Choose user ID", sorted(ratings["user_id"].unique()))
+    user_id = st.selectbox(
+        "Choose user ID",
+        sorted(ratings["user_id"].unique())
+    )
+
     movie_title = st.selectbox("Choose a movie", movies["title"].tolist())
 
-    content_weight = st.slider("Content weight", 0.0, 1.0, 0.5)
+    content_weight = st.slider(
+        "Content-based weight",
+        0.0,
+        1.0,
+        0.5
+    )
+
     cf_weight = 1.0 - content_weight
+
+    st.write(f"Collaborative filtering weight: **{cf_weight:.2f}**")
 
     result = hybrid_recommend(
         user_id=user_id,
         movie_title=movie_title,
         top_n=top_n,
-        content_weight=content_weight,
-        cf_weight=cf_weight
+        content_weight=content_weight
     )
 
-    st.dataframe(result)
+    display_recommendations(result)
+
+
+# --------------------------------------------------
+# Footer
+# --------------------------------------------------
+st.markdown("---")
+st.caption(
+    "Built as part of an Applied AI / Machine Learning portfolio project."
+)
