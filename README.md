@@ -182,3 +182,13 @@ Please consider giving it a ⭐.
 - Ranking quality matters more than predicting exact ratings.
 - Offline metrics should be connected to business outcomes.
 - Production recommenders must handle cold-start users, bias, latency, and feedback loops.
+
+## Streamlit App
+
+This project includes an interactive Streamlit application to explore different recommendation strategies.
+
+### Home Page
+![Streamlit Home](docs/images/streamlit-home.png)
+
+### Recommendation Results
+![Recommendations](docs/images/streamlit-recommendations.png)
