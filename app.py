@@ -4,9 +4,6 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 
-# --------------------------------------------------
-# Page Configuration
-# --------------------------------------------------
 st.set_page_config(
     page_title="Netflix Recommendation System",
     page_icon="🎬",
@@ -20,9 +17,6 @@ st.write(
 )
 
 
-# --------------------------------------------------
-# Load Data
-# --------------------------------------------------
 @st.cache_data
 def load_data():
     movies_df = pd.read_csv("data/movies.csv")
@@ -34,9 +28,26 @@ def load_data():
 movies, users, ratings = load_data()
 
 
-# --------------------------------------------------
-# Content-Based Setup
-# --------------------------------------------------
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.metric("Movies", f"{len(movies):,}")
+
+with col2:
+    st.metric("Users", f"{ratings['user_id'].nunique():,}")
+
+with col3:
+    st.metric("Ratings", f"{len(ratings):,}")
+
+
+with st.expander("📊 Dataset Overview"):
+    st.write(f"**Movies:** {len(movies):,}")
+    st.write(f"**Users:** {ratings['user_id'].nunique():,}")
+    st.write(f"**Ratings:** {len(ratings):,}")
+    if "genre" in movies.columns:
+        st.write(f"**Genres:** {movies['genre'].nunique():,}")
+
+
 @st.cache_resource
 def build_content_similarity(movies_df):
     movies_df = movies_df.copy()
@@ -57,9 +68,6 @@ def build_content_similarity(movies_df):
 content_similarity = build_content_similarity(movies)
 
 
-# --------------------------------------------------
-# Collaborative Filtering Setup
-# --------------------------------------------------
 @st.cache_resource
 def build_collaborative_similarity(ratings_df):
     user_movie_matrix_df = ratings_df.pivot_table(
@@ -82,9 +90,6 @@ def build_collaborative_similarity(ratings_df):
 user_movie_matrix, movie_similarity_df = build_collaborative_similarity(ratings)
 
 
-# --------------------------------------------------
-# Recommendation Functions
-# --------------------------------------------------
 def recommend_popular_movies(top_n=10, min_ratings=5):
     movie_stats = (
         ratings.groupby("movie_id")
@@ -220,9 +225,6 @@ def display_recommendations(result, include_ratings=False):
     )
 
 
-# --------------------------------------------------
-# Sidebar
-# --------------------------------------------------
 st.sidebar.title("Recommendation Settings")
 st.sidebar.write(
     "Compare different recommendation strategies using movie ratings and metadata."
@@ -241,9 +243,6 @@ option = st.sidebar.selectbox(
 top_n = st.sidebar.slider("Number of recommendations", 5, 20, 10)
 
 
-# --------------------------------------------------
-# Main App
-# --------------------------------------------------
 if option == "Popular Movies":
     st.subheader("🔥 Popular Movies")
     st.info(
@@ -333,9 +332,6 @@ elif option == "Hybrid Recommendation":
     display_recommendations(result)
 
 
-# --------------------------------------------------
-# Footer
-# --------------------------------------------------
 st.markdown("---")
 st.caption(
     "Built as part of an Applied AI / Machine Learning portfolio project."
