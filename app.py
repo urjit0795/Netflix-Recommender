@@ -3,6 +3,8 @@ import streamlit as st
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+from semantic_search import get_movie_embeddings, load_embedding_model, semantic_search
+
 
 st.set_page_config(
     page_title="Netflix Recommendation System",
@@ -13,7 +15,8 @@ st.set_page_config(
 st.title("🎬 Netflix Recommendation System")
 st.write(
     "An interactive app to explore movie recommendations using popularity-based, "
-    "content-based, collaborative filtering, and hybrid recommendation methods."
+    "content-based, collaborative filtering, hybrid, and AI-powered semantic "
+    "search recommendation methods."
 )
 
 
@@ -66,6 +69,17 @@ def build_content_similarity(movies_df):
 
 
 content_similarity = build_content_similarity(movies)
+
+
+@st.cache_resource
+def get_semantic_search_resources(movies_df):
+    """Load the Sentence Transformer model and (cached) movie embeddings."""
+    model = load_embedding_model()
+    embeddings = get_movie_embeddings(movies_df, model=model)
+    return model, embeddings
+
+
+semantic_model, movie_embeddings = get_semantic_search_resources(movies)
 
 
 @st.cache_resource
@@ -200,7 +214,7 @@ def hybrid_recommend(user_id, movie_title, top_n=10, content_weight=0.5):
     return movies[movies["movie_id"].isin(recommended_ids)]
 
 
-def display_recommendations(result, include_ratings=False):
+def display_recommendations(result, include_ratings=False, include_similarity=False):
     if result.empty:
         st.warning("No recommendations found. Try a different input.")
         return
@@ -213,6 +227,8 @@ def display_recommendations(result, include_ratings=False):
             "avg_user_rating",
             "rating_count"
         ]
+    elif include_similarity:
+        display_cols = ["title", "genre", "release_year", "similarity"]
     else:
         display_cols = ["title", "genre", "release_year"]
 
@@ -236,7 +252,8 @@ option = st.sidebar.selectbox(
         "Popular Movies",
         "Content-Based Recommendation",
         "User-Based Personalized Recommendation",
-        "Hybrid Recommendation"
+        "Hybrid Recommendation",
+        "Semantic Search (AI-Powered)"
     ]
 )
 
@@ -330,6 +347,36 @@ elif option == "Hybrid Recommendation":
     )
 
     display_recommendations(result)
+
+
+elif option == "Semantic Search (AI-Powered)":
+    st.subheader("🤖 Semantic Search")
+    st.info(
+        "Semantic search uses a pretrained Sentence Transformer "
+        "(`all-MiniLM-L6-v2`) to embed movie metadata and your query into "
+        "the same vector space, then ranks movies by cosine similarity. "
+        "Unlike the TF-IDF content-based method, this can match on meaning "
+        "rather than exact keywords -- e.g. try \"gritty crime thriller "
+        "from the 90s\" or \"heartwarming animated family movie\"."
+    )
+
+    query = st.text_input(
+        "Describe the kind of movie you're looking for",
+        placeholder="e.g. gritty crime thriller from the 90s"
+    )
+
+    if query:
+        result = semantic_search(
+            query=query,
+            movies_df=movies,
+            movie_embeddings=movie_embeddings,
+            model=semantic_model,
+            top_n=top_n
+        )
+
+        display_recommendations(result, include_similarity=True)
+    else:
+        st.write("Enter a description above to get AI-powered recommendations.")
 
 
 st.markdown("---")
