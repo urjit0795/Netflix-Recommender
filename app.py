@@ -3,7 +3,14 @@ import streamlit as st
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-from semantic_search import get_movie_embeddings, load_embedding_model, semantic_search
+from semantic_search import load_embedding_model
+from vector_search import get_faiss_index, faiss_search
+from llm_reranker import (
+    build_user_context,
+    format_candidates,
+    build_reranking_prompt
+)
+import rag_chat
 
 
 st.set_page_config(
@@ -73,13 +80,15 @@ content_similarity = build_content_similarity(movies)
 
 @st.cache_resource
 def get_semantic_search_resources(movies_df):
-    """Load the Sentence Transformer model and (cached) movie embeddings."""
+    """Load the Sentence Transformer model and (cached) FAISS index over
+    every movie's embedding. The index is rebuilt only when the underlying
+    movie data changes (see vector_search.get_faiss_index)."""
     model = load_embedding_model()
-    embeddings = get_movie_embeddings(movies_df, model=model)
-    return model, embeddings
+    index = get_faiss_index(movies_df, model=model)
+    return model, index
 
 
-semantic_model, movie_embeddings = get_semantic_search_resources(movies)
+semantic_model, movie_index = get_semantic_search_resources(movies)
 
 
 @st.cache_resource
@@ -176,43 +185,83 @@ def recommend_for_user(user_id, top_n=10):
 def hybrid_recommend(user_id, movie_title, top_n=10, content_weight=0.5):
     cf_weight = 1.0 - content_weight
 
-    matches = movies[movies["title"].str.lower().str.contains(movie_title.lower())]
+    # Find the selected movie
+    matches = movies[
+        movies["title"].str.lower().str.contains(movie_title.lower())
+    ]
 
+    # Return empty DataFrame if movie or user does not exist
     if matches.empty or user_id not in user_movie_matrix.index:
         return pd.DataFrame()
 
     movie_idx = matches.index[0]
     movie_id = movies.loc[movie_idx, "movie_id"]
 
+    # Make sure selected movie exists in collaborative similarity matrix
     if movie_id not in movie_similarity_df.columns:
         return pd.DataFrame()
 
+    # -----------------------------
+    # Content-based scores
+    # -----------------------------
     content_scores = pd.Series(
         content_similarity[movie_idx],
         index=movies["movie_id"]
     )
 
+    # -----------------------------
+    # Collaborative filtering scores
+    # -----------------------------
     cf_scores = movie_similarity_df[movie_id]
 
+    # Get movies already watched by the user
     user_ratings = user_movie_matrix.loc[user_id]
     watched_movies = user_ratings[user_ratings > 0].index.tolist()
 
+    # -----------------------------
+    # Combine scores
+    # -----------------------------
     combined_scores = (
         content_weight * content_scores +
         cf_weight * cf_scores
     )
 
-    combined_scores = combined_scores.drop(labels=watched_movies, errors="ignore")
+    # Do not recommend movies already watched by the user
+    combined_scores = combined_scores.drop(
+        labels=watched_movies,
+        errors="ignore"
+    )
 
-    recommended_ids = (
+    # -----------------------------
+    # Rank candidate movies
+    # -----------------------------
+    ranked_scores = (
         combined_scores
         .sort_values(ascending=False)
         .head(top_n)
-        .index
     )
 
-    return movies[movies["movie_id"].isin(recommended_ids)]
+    # Get movie metadata
+    recommendations = movies[
+        movies["movie_id"].isin(ranked_scores.index)
+    ].copy()
 
+    # Add the hybrid recommendation score
+    recommendations["hybrid_score"] = (
+        recommendations["movie_id"].map(ranked_scores)
+    )
+
+    # Preserve actual ranking order
+    recommendations = (
+        recommendations
+        .sort_values(
+            "hybrid_score",
+            ascending=False
+        )
+        .reset_index(drop=True)
+    )
+
+    return recommendations
 
 def display_recommendations(result, include_ratings=False, include_similarity=False):
     if result.empty:
@@ -228,14 +277,37 @@ def display_recommendations(result, include_ratings=False, include_similarity=Fa
             "rating_count"
         ]
     elif include_similarity:
-        display_cols = ["title", "genre", "release_year", "similarity"]
+        display_cols = [
+            "title",
+            "genre",
+            "release_year",
+            "similarity"
+        ]
     else:
-        display_cols = ["title", "genre", "release_year"]
+        display_cols = [
+            "title",
+            "genre",
+            "release_year"
+        ]
+
+        # Hybrid recommendations include the score produced by
+        # the combined content + collaborative filtering model.
+        if "hybrid_score" in result.columns:
+            display_cols.append("hybrid_score")
 
     available_cols = [col for col in display_cols if col in result.columns]
 
+    display_df = result[available_cols].copy()
+
+    # Make ranking scores easier to read in the Streamlit table.
+    if "hybrid_score" in display_df.columns:
+        display_df["hybrid_score"] = display_df["hybrid_score"].round(4)
+
+    if "similarity" in display_df.columns:
+        display_df["similarity"] = display_df["similarity"].round(4)
+
     st.dataframe(
-        result[available_cols],
+        display_df,
         use_container_width=True,
         hide_index=True
     )
@@ -253,7 +325,8 @@ option = st.sidebar.selectbox(
         "Content-Based Recommendation",
         "User-Based Personalized Recommendation",
         "Hybrid Recommendation",
-        "Semantic Search (AI-Powered)"
+        "Semantic Search (AI-Powered)",
+        "Conversational Recommendations (RAG)"
     ]
 )
 
@@ -316,18 +389,45 @@ elif option == "User-Based Personalized Recommendation":
 
 elif option == "Hybrid Recommendation":
     st.subheader("🧠 Hybrid Recommendation")
+
     st.info(
         "Hybrid recommendation combines content similarity and collaborative filtering "
         "to balance personalization and movie similarity."
     )
 
+    # -----------------------------
+    # Select user
+    # -----------------------------
     user_id = st.selectbox(
         "Choose user ID",
         sorted(ratings["user_id"].unique())
     )
 
-    movie_title = st.selectbox("Choose a movie", movies["title"].tolist())
+    # -----------------------------
+    # Select movie
+    # -----------------------------
+    movie_title = st.selectbox(
+        "Choose a movie",
+        movies["title"].tolist()
+    )
 
+    # -----------------------------
+    # Build GenRec-inspired user context
+    # -----------------------------
+    user_context = build_user_context(
+        user_id=user_id,
+        ratings_df=ratings,
+        movies_df=movies,
+        max_liked=5,
+        max_disliked=5
+    )
+
+    with st.expander("🧠 User Context for LLM Reranking"):
+        st.text(user_context)
+
+    # -----------------------------
+    # Hybrid weights
+    # -----------------------------
     content_weight = st.slider(
         "Content-based weight",
         0.0,
@@ -337,8 +437,13 @@ elif option == "Hybrid Recommendation":
 
     cf_weight = 1.0 - content_weight
 
-    st.write(f"Collaborative filtering weight: **{cf_weight:.2f}**")
+    st.write(
+        f"Collaborative filtering weight: **{cf_weight:.2f}**"
+    )
 
+    # -----------------------------
+    # Generate hybrid recommendations
+    # -----------------------------
     result = hybrid_recommend(
         user_id=user_id,
         movie_title=movie_title,
@@ -346,6 +451,28 @@ elif option == "Hybrid Recommendation":
         content_weight=content_weight
     )
 
+    # -----------------------------
+    # Format candidates for LLM
+    # -----------------------------
+    candidate_context = format_candidates(result)
+
+    with st.expander("🎬 Candidate Context for LLM Reranking"):
+        st.text(candidate_context)
+
+    # -----------------------------
+    # Build LLM reranking prompt
+    # -----------------------------
+    reranking_prompt = build_reranking_prompt(
+        user_context=user_context,
+        candidate_context=candidate_context
+    )
+
+    with st.expander("📝 LLM Reranking Prompt"):
+        st.text(reranking_prompt)
+
+    # -----------------------------
+    # Display hybrid recommendations
+    # -----------------------------
     display_recommendations(result)
 
 
@@ -354,7 +481,11 @@ elif option == "Semantic Search (AI-Powered)":
     st.info(
         "Semantic search uses a pretrained Sentence Transformer "
         "(`all-MiniLM-L6-v2`) to embed movie metadata and your query into "
-        "the same vector space, then ranks movies by cosine similarity. "
+        "the same vector space, then retrieves the closest matches using a "
+        "**FAISS vector index** (exact nearest-neighbor search via inner "
+        "product on normalized embeddings -- equivalent to cosine "
+        "similarity, but using the same indexing primitive production "
+        "retrieval/RAG systems use, instead of a brute-force scan). "
         "Unlike the TF-IDF content-based method, this can match on meaning "
         "rather than exact keywords -- e.g. try \"gritty crime thriller "
         "from the 90s\" or \"heartwarming animated family movie\"."
@@ -366,10 +497,10 @@ elif option == "Semantic Search (AI-Powered)":
     )
 
     if query:
-        result = semantic_search(
+        result = faiss_search(
             query=query,
             movies_df=movies,
-            movie_embeddings=movie_embeddings,
+            index=movie_index,
             model=semantic_model,
             top_n=top_n
         )
@@ -377,6 +508,67 @@ elif option == "Semantic Search (AI-Powered)":
         display_recommendations(result, include_similarity=True)
     else:
         st.write("Enter a description above to get AI-powered recommendations.")
+
+
+elif option == "Conversational Recommendations (RAG)":
+    st.subheader("💬 Conversational Recommendations (RAG)")
+    st.info(
+        "This is a Retrieval-Augmented Generation (RAG) pipeline: your "
+        "message retrieves candidate movies from the FAISS vector index "
+        "(same retrieval as Semantic Search), then an LLM (Anthropic's "
+        "`claude-3-5-haiku` via Amazon Bedrock) "
+        "recommends from *only* those retrieved candidates and explains "
+        "why -- it can't invent movies outside the retrieved list. "
+        "Try a follow-up like \"something funnier\" or \"more recent\" to "
+        "refine within the conversation."
+    )
+
+    if "rag_messages" not in st.session_state:
+        st.session_state.rag_messages = []
+
+    for message in st.session_state.rag_messages:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
+            if message["role"] == "assistant" and message.get("candidates") is not None:
+                with st.expander("Retrieved candidates (grounding context)"):
+                    display_recommendations(message["candidates"], include_similarity=True)
+
+    user_message = st.chat_input("e.g. Show me a feel-good movie for a rainy day")
+
+    if user_message:
+        st.session_state.rag_messages.append({"role": "user", "content": user_message})
+        with st.chat_message("user"):
+            st.write(user_message)
+
+        with st.chat_message("assistant"):
+            with st.spinner("Retrieving candidates and generating a response..."):
+                try:
+                    response_text, candidates = rag_chat.chat(
+                        conversation_history=st.session_state.rag_messages,
+                        movies_df=movies,
+                        index=movie_index,
+                        embedding_model=semantic_model,
+                        top_n=top_n,
+                    )
+                except RuntimeError as e:
+                    response_text = str(e)
+                    candidates = None
+
+                st.write(response_text)
+                if candidates is not None and not candidates.empty:
+                    with st.expander("Retrieved candidates (grounding context)"):
+                        display_recommendations(candidates, include_similarity=True)
+
+        st.session_state.rag_messages.append({
+            "role": "assistant",
+            "content": response_text,
+            "candidates": candidates,
+        })
+
+    if st.session_state.rag_messages:
+        if st.button("Clear conversation"):
+            st.session_state.rag_messages = []
+            st.rerun()
 
 
 st.markdown("---")
