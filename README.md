@@ -1,141 +1,207 @@
-<div align="center">
-
 # 🎬 Netflix AI Recommendation Platform
 
-### From Classical Recommendation Systems to LLM-Powered Recommendations
+An end-to-end recommendation system exploring the evolution from **classical recommendation algorithms → semantic retrieval → RAG → LLM-based reranking**.
 
-![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)
-![Scikit-Learn](https://img.shields.io/badge/Scikit--Learn-ML-orange?logo=scikit-learn)
-![Streamlit](https://img.shields.io/badge/Streamlit-App-red?logo=streamlit)
-![FAISS](https://img.shields.io/badge/FAISS-Vector_Search-blue)
-![AWS](https://img.shields.io/badge/AWS-Bedrock-orange?logo=amazonaws)
-
-</div>
+The goal of this project is to understand how traditional recommendation systems and modern LLM-based approaches can work together rather than replacing one another.
 
 ---
 
-## 🚀 Overview
-
-An end-to-end movie recommendation platform exploring the evolution from **traditional recommendation algorithms to modern LLM-powered recommendation systems**.
-
-The project combines:
-
-* Popularity, content-based and collaborative filtering
-* Hybrid recommendation
-* Sentence Transformer embeddings
-* FAISS semantic retrieval
-* Retrieval-Augmented Generation (RAG)
-* Claude via AWS Bedrock
-* GenRec-inspired context engineering and LLM reranking
-
-The goal is not to reproduce Netflix's production system, but to experiment with the architecture and techniques behind modern recommendation platforms.
-
----
-
-## 🧠 How It Works
+## 🏗️ Architecture
 
 ```text
-                    User
-                      │
-          ┌───────────┴───────────┐
-          ▼                       ▼
-   Rating History           Movie / Query
-          │                       │
-          ▼                       ▼
-  User Preference          Candidate Generation
-      Context               ├─ Hybrid Recommender
-          │                 └─ FAISS Semantic Search
-          │                       │
-          └───────────┬───────────┘
-                      ▼
-                 LLM Layer
-                Claude / Bedrock
-                      │
-             ┌────────┴────────┐
-             ▼                 ▼
-      Conversational       LLM Reranking
-      Recommendations          🚧
+User
+ │
+ ├── Rating History
+ │       ↓
+ │   User Preference Context
+ │
+ └── Natural-Language Query
+         ↓
+   Sentence Transformers
+         ↓
+        FAISS
+         ↓
+   Candidate Movies
+         ↓
+   Context Engineering
+         ↓
+     LLM Reranker 🚧
+         ↓
+ Final Recommendations
 ```
+
+The architecture follows a simple idea:
+
+### **Retrieve → Reason → Rank**
+
+**Retrieve:** Traditional recommendation models and semantic search identify relevant candidate movies.
+
+**Reason:** User history and candidate metadata are converted into structured context for the LLM.
+
+**Rank:** The LLM evaluates a constrained candidate set and produces a final ranking.
+
+> **FAISS retrieves. The LLM reasons.**
 
 ---
 
-## ✨ Features
+## ✨ Current Features
 
 | Feature                             | Status |
-| ----------------------------------- | :----: |
-| Popularity Recommendations          |    ✅   |
-| Content-Based Filtering             |    ✅   |
-| Collaborative Filtering             |    ✅   |
-| Hybrid Recommendations              |    ✅   |
-| Precision@K / Recall@K              |    ✅   |
-| Sentence Transformer Embeddings     |    ✅   |
-| FAISS Semantic Search               |    ✅   |
-| Conversational RAG                  |    ✅   |
-| AWS Bedrock / Claude Integration    |    ✅   |
-| GenRec-Inspired Context Engineering |    ✅   |
-| LLM Reranking                       |   🚧   |
-| Ranking / LLM Evaluation            |    ⏳   |
-| Recommendation Agent                |    ⏳   |
+| ----------------------------------- | ------ |
+| Popularity-Based Recommendations    | ✅      |
+| Content-Based Filtering             | ✅      |
+| Collaborative Filtering             | ✅      |
+| Hybrid Recommendations              | ✅      |
+| Precision@K / Recall@K              | ✅      |
+| Sentence Transformer Embeddings     | ✅      |
+| Semantic Search                     | ✅      |
+| FAISS Vector Search                 | ✅      |
+| Conversational RAG                  | ✅      |
+| GenRec-Inspired Context Engineering | ✅      |
+| LLM Reranking                       | 🚧     |
+| LLM / Ranking Evaluation            | ⏳      |
+| Recommendation Agent                | ⏳      |
 
 ---
 
-## 🔍 Semantic Search + RAG
+## 1️⃣ Classical Recommendation Systems
 
-The platform supports natural-language movie discovery using **Sentence Transformers and FAISS**.
+The project started by implementing several recommendation baselines:
 
-For example:
+### Popularity-Based
+
+Ranks movies using overall engagement and rating signals.
+
+### Content-Based Filtering
+
+Uses movie metadata and TF-IDF similarity to identify related movies.
+
+### Collaborative Filtering
+
+Uses user-rating behavior to identify recommendations based on similar preferences.
+
+### Hybrid Recommendations
+
+Combines multiple recommendation signals into a unified candidate ranking.
+
+These models provide the baseline against which newer AI-based approaches can be evaluated.
+
+---
+
+## 2️⃣ Semantic Search
+
+Keyword matching can struggle when the user's intent doesn't exactly match movie metadata.
+
+Semantic search allows queries such as:
 
 ```text
-"gritty crime thriller from the 90s"
+"real-world true story documentary"
 ```
 
-The query is embedded and matched against the movie catalog using semantic similarity.
+The system:
 
-For conversational recommendations, retrieved movies are passed to **Claude through AWS Bedrock**, allowing the LLM to recommend and explain movies while remaining grounded in retrieved candidates.
+```text
+Query
+  ↓
+Sentence Transformer
+  ↓
+Query Embedding
+  ↓
+FAISS Vector Search
+  ↓
+Semantically Similar Movies
+```
+
+Movie metadata is embedded using a pretrained Sentence Transformer and stored for efficient retrieval.
+
+FAISS provides fast similarity search across those embeddings.
+
+---
+
+## 3️⃣ Conversational RAG
+
+Semantic retrieval is extended into a conversational recommendation workflow.
 
 ```text
 User Query
     ↓
-Sentence Transformer
+Semantic Retrieval
     ↓
-FAISS Retrieval
+FAISS
     ↓
 Candidate Movies
     ↓
-Claude / AWS Bedrock
+LLM
     ↓
 Grounded Recommendation
 ```
 
+Instead of asking the LLM to generate arbitrary movie recommendations, the model receives retrieved candidates as context.
+
+This keeps the response grounded in the recommendation catalog while allowing natural-language interaction.
+
 ---
 
-## 🧠 GenRec-Inspired LLM Reranking
+## 4️⃣ GenRec-Inspired LLM Reranking
 
-The latest experiment is inspired by Netflix's **GenRec** research and explores moving part of the recommendation problem from **feature engineering toward context engineering**.
+The latest stage of the project explores a different role for LLMs:
 
-Instead of replacing the existing recommender, the hybrid model remains responsible for candidate generation.
+### Instead of asking an LLM to retrieve recommendations, use it to rank good candidates.
+
+The approach is inspired by Netflix's **GenRec** work on generative recommendation ranking.
 
 ```text
 User Rating History
         ↓
-Natural-Language Preference Context
+Preference Context
         │
-        ├──────────────┐
-        │              │
-Hybrid Recommender     │
-        ↓              │
-Candidate Movies       │
-        │              │
-        └──────┬───────┘
-               ▼
-        Reranking Prompt
-               ↓
-          LLM Reranker 🚧
+        │
+Hybrid / Semantic Retrieval
+        ↓
+Candidate Movies
+        │
+        └──────────────┐
+                       ↓
+                Reranking Context
+                       ↓
+                  LLM Reranker
+                       ↓
+                  Final Ranking
 ```
 
-The user context includes both positive and negative preference signals, while candidate context includes movie metadata and the original hybrid recommendation score.
+The reranker receives two important pieces of context:
 
-The next step is to use Claude to rerank these candidates and compare the result against the original hybrid ranking.
+**User context**
+
+* Movies the user rated highly
+* Movies the user disliked
+* Genre and preference signals
+
+**Candidate context**
+
+* Candidate movie metadata
+* Existing recommendation scores
+* Relevant retrieval information
+
+This allows the LLM to reason over a **small, high-quality candidate set** rather than the entire catalog.
+
+---
+
+## 🧠 Why Retrieval + LLM Reranking?
+
+LLMs are powerful reasoning systems, but they are not necessarily the most efficient retrieval engines.
+
+A multi-stage recommendation architecture lets each component do what it does best:
+
+```text
+Vector Search → Fast Candidate Retrieval
+
+Traditional ML → Recommendation Signals
+
+LLM → Contextual Reasoning + Reranking
+```
+
+This creates a hybrid system where traditional recommendation techniques and generative AI complement each other.
 
 ---
 
@@ -143,87 +209,117 @@ The next step is to use Claude to rerank these candidates and compare the result
 
 Currently implemented:
 
-* **Precision@K**
-* **Recall@K**
+* Precision@K
+* Recall@K
 
-Planned for the reranking experiment:
-
-* **NDCG@K**
-* Hybrid vs. LLM ranking comparison
-* Recommendation relevance
-* Latency and cost
-
----
-
-## 🛠 Tech Stack
-
-| Area             | Technologies          |
-| ---------------- | --------------------- |
-| Language         | Python                |
-| Machine Learning | Scikit-learn          |
-| Data             | Pandas, NumPy         |
-| Embeddings       | Sentence Transformers |
-| Vector Search    | FAISS                 |
-| LLM              | Claude                |
-| Cloud AI         | AWS Bedrock           |
-| UI               | Streamlit             |
-
----
-
-## 📂 Project Structure
+The next phase will compare:
 
 ```text
-Netflix-Recommender/
-│
-├── app.py
-├── semantic_search.py
-├── vector_search.py
-├── rag_chat.py
-├── llm_reranker.py
-├── requirements.txt
-├── netflix_recommender.ipynb
-│
-├── data/
-├── diagrams/
-└── docs/
+Baseline Recommendations
+        vs.
+Hybrid Recommendations
+        vs.
+LLM-Reranked Recommendations
+```
+
+Planned evaluation includes:
+
+* NDCG@K
+* Ranking quality
+* LLM-as-a-Judge relevance
+* Latency
+* LLM inference cost
+
+The goal is not simply to add an LLM, but to determine whether it **measurably improves recommendation quality**.
+
+---
+
+## 🛠️ Tech Stack
+
+| Area             | Technologies              |
+| ---------------- | ------------------------- |
+| Language         | Python                    |
+| Machine Learning | Scikit-learn              |
+| Data Processing  | Pandas, NumPy             |
+| Embeddings       | Sentence Transformers     |
+| Vector Search    | FAISS                     |
+| Generative AI    | LLM-based RAG & Reranking |
+| Application      | Streamlit                 |
+
+---
+
+## 🗺️ Project Roadmap
+
+```text
+Classical Recommendations     ✅
+          ↓
+Hybrid Recommendation         ✅
+          ↓
+Semantic Search               ✅
+          ↓
+FAISS Vector Retrieval        ✅
+          ↓
+Conversational RAG            ✅
+          ↓
+GenRec Context Engineering    ✅
+          ↓
+LLM Reranking                 🚧
+          ↓
+Ranking + LLM Evaluation      ⏳
+          ↓
+Recommendation Agent          ⏳
 ```
 
 ---
 
-## 🗺 Roadmap
+## 🔬 What I'm Exploring
 
-```text
-Classical Recommendations      ✅
-          ↓
-Hybrid Recommendation          ✅
-          ↓
-Semantic Search + FAISS        ✅
-          ↓
-Conversational RAG             ✅
-          ↓
-GenRec Context Engineering     ✅
-          ↓
-LLM Reranking                  🚧
-          ↓
-Ranking / LLM Evaluation       ⏳
-          ↓
-Recommendation Agent           ⏳
-```
-
----
-
-## 🎯 What I'm Exploring
-
-This project focuses on practical questions in modern recommendation systems:
+This project is ultimately about answering a few practical Applied AI questions:
 
 * Where should traditional ML end and LLMs begin?
-* Can semantic retrieval improve recommendation discovery?
-* Can richer user context improve ranking?
+* Should an LLM retrieve, reason, rank — or some combination of the three?
+* How much does user context affect LLM ranking?
+* Does LLM reranking actually outperform traditional recommendation methods?
 * How should LLM-powered recommendations be evaluated?
-* How can recommendations remain grounded and explainable?
+* How do recommendation quality, latency, and inference cost trade off?
 
 ---
 
-## ⭐ About
+## 🚀 Running the Project
 
-Built as an **Applied AI / Machine Learning portfolio project** exploring the progression from traditional recommendation algorithms to retrieval, RAG, and LLM-powered ranking.
+Clone the repository:
+
+```bash
+git clone https://github.com/urjit0795/Netflix-Recommender.git
+cd Netflix-Recommender
+```
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Run the Streamlit application:
+
+```bash
+streamlit run app.py
+```
+
+---
+
+## 📚 Inspiration
+
+The LLM reranking portion of this project is inspired by Netflix's **GenRec** research, which explores using generative models as recommendation rankers.
+
+Rather than reproducing Netflix's production system, this project experiments with the underlying idea at a smaller scale:
+
+**retrieve strong candidates first, then use an LLM to reason about their final ranking.**
+
+---
+
+## 👤 Author
+
+**Urjit Kurulkar**
+
+Senior Data Scientist focused on production ML, recommendation systems, Generative AI, RAG, and Applied AI engineering.

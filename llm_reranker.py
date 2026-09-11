@@ -1,19 +1,23 @@
+import json
+
+from rag_chat import get_anthropic_client, CHAT_MODEL
+
+
 def build_user_context(
     user_id,
     ratings_df,
     movies_df,
     max_liked=5,
-    max_disliked=5
+    max_disliked=5,
 ):
     """
     Convert a user's structured rating history into natural-language
-    context that can later be passed to the LLM reranker.
+    context for the LLM reranker.
 
     Includes both highly rated and poorly rated movies so the LLM
     can understand positive and negative preferences.
     """
 
-    # Get ratings for the selected user
     user_ratings = ratings_df[
         ratings_df["user_id"] == user_id
     ].copy()
@@ -21,32 +25,27 @@ def build_user_context(
     if user_ratings.empty:
         return "No rating history available for this user."
 
-    # Join ratings with movie metadata
     user_history = user_ratings.merge(
         movies_df[
             [
                 "movie_id",
                 "title",
                 "genre",
-                "release_year"
+                "release_year",
             ]
         ],
         on="movie_id",
-        how="left"
+        how="left",
     )
 
-    # -----------------------------
-    # Movies the user liked
-    # -----------------------------
+    # Highest-rated movies
     liked_movies = (
         user_history
         .sort_values("rating", ascending=False)
         .head(max_liked)
     )
 
-    # -----------------------------
-    # Movies the user disliked
-    # -----------------------------
+    # Lowest-rated movies
     disliked_movies = (
         user_history
         .sort_values("rating", ascending=True)
@@ -56,7 +55,7 @@ def build_user_context(
     context_lines = [
         "USER PREFERENCE HISTORY",
         "",
-        "Movies the user liked:"
+        "Movies the user liked:",
     ]
 
     for _, row in liked_movies.iterrows():
@@ -69,7 +68,7 @@ def build_user_context(
 
     context_lines.extend([
         "",
-        "Movies the user disliked:"
+        "Movies the user disliked:",
     ])
 
     for _, row in disliked_movies.iterrows():
@@ -82,18 +81,20 @@ def build_user_context(
 
     return "\n".join(context_lines)
 
+
 def format_candidates(candidates_df):
     """
-    Convert hybrid recommendation candidates into compact natural-language
+    Convert recommendation candidates into compact natural-language
     context for the LLM reranker.
 
     Expected columns:
-        movie_id, title, genre, release_year, hybrid_score
+        movie_id
+        title
+        genre
+        release_year
 
-    Returns
-    -------
-    str
-        Formatted candidate list for inclusion in the reranking prompt.
+    Optional column:
+        hybrid_score
     """
 
     if candidates_df is None or candidates_df.empty:
@@ -101,10 +102,13 @@ def format_candidates(candidates_df):
 
     context_lines = [
         "CANDIDATE MOVIES",
-        ""
+        "",
     ]
 
-    for rank, (_, row) in enumerate(candidates_df.iterrows(), start=1):
+    for rank, (_, row) in enumerate(
+        candidates_df.iterrows(),
+        start=1,
+    ):
         hybrid_score = row.get("hybrid_score")
 
         if hybrid_score is not None:
@@ -116,21 +120,29 @@ def format_candidates(candidates_df):
             hybrid_score = "N/A"
 
         context_lines.append(
-            f"{rank}. {row['title']} ({row['release_year']})"
+            f"{rank}. Movie ID: {row['movie_id']} | "
+            f"{row['title']} ({row['release_year']})"
         )
+
         context_lines.append(
             f"   Genre: {row['genre']}"
         )
+
         context_lines.append(
             f"   Hybrid score: {hybrid_score}"
         )
+
         context_lines.append("")
 
     return "\n".join(context_lines).strip()
 
-def build_reranking_prompt(user_context, candidate_context):
+
+def build_reranking_prompt(
+    user_context,
+    candidate_context,
+):
     """
-    Combine user preference history and hybrid candidate movies
+    Combine user preference history and recommendation candidates
     into a prompt for the LLM reranker.
     """
 
@@ -147,13 +159,12 @@ Use the user's preference history to understand:
 - release-year preferences
 - broader thematic preferences
 
-The candidate movies were already retrieved by a hybrid
-recommendation system using content-based filtering and
-collaborative filtering.
+The candidate movies were already retrieved by a recommendation
+system using traditional recommendation and/or semantic retrieval.
 
-The hybrid score is useful evidence, but you are allowed to
-change the ranking if the user's preference history suggests
-a better ordering.
+The existing recommendation score is useful evidence, but you are
+allowed to change the ranking if the user's preference history
+suggests a better ordering.
 
 {user_context}
 
@@ -161,7 +172,7 @@ a better ordering.
 
 Return the reranked movies in JSON format only.
 
-Use this structure:
+Use exactly this structure:
 
 [
     {{
@@ -175,11 +186,222 @@ Use this structure:
 Requirements:
 - Only rank movies from the candidate list.
 - Do not invent new movies.
+- Use the exact movie_id values provided in the candidate list.
 - Rank every candidate exactly once.
+- Do not duplicate candidates.
 - Rank 1 is the strongest recommendation.
 - score must be between 0 and 1.
 - Keep each reason concise.
 - Return valid JSON only.
+- Do not include markdown fences.
+- Do not include any text before or after the JSON.
 """
 
     return prompt.strip()
+
+
+def call_llm_reranker(
+    prompt,
+    client=None,
+):
+    """
+    Send the reranking prompt to Claude through Amazon Bedrock.
+
+    Returns
+    -------
+    str
+        Raw text returned by the LLM.
+    """
+
+    if client is None:
+        client = get_anthropic_client()
+
+    response = client.messages.create(
+        model=CHAT_MODEL,
+        max_tokens=1500,
+        messages=[
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ],
+    )
+
+    return response.content[0].text.strip()
+
+
+def validate_reranked_results(
+    reranked_results,
+    candidates_df,
+):
+    """
+    Validate that the LLM returned exactly the candidate movies
+    supplied to it.
+
+    Checks:
+    - response is a list
+    - every item has required fields
+    - no candidate IDs were invented
+    - no candidates were omitted
+    - no candidates were duplicated
+    - rank values are valid
+    - scores are between 0 and 1
+    """
+
+    if not isinstance(reranked_results, list):
+        raise ValueError(
+            "LLM reranking response must be a JSON list."
+        )
+
+    required_fields = {
+        "movie_id",
+        "rank",
+        "score",
+        "reason",
+    }
+
+    candidate_ids = set(
+        candidates_df["movie_id"].tolist()
+    )
+
+    returned_ids = []
+
+    for result in reranked_results:
+        if not isinstance(result, dict):
+            raise ValueError(
+                "Every reranking result must be a JSON object."
+            )
+
+        missing_fields = required_fields - set(result.keys())
+
+        if missing_fields:
+            raise ValueError(
+                f"Reranking result is missing fields: "
+                f"{missing_fields}"
+            )
+
+        movie_id = result["movie_id"]
+
+        if movie_id not in candidate_ids:
+            raise ValueError(
+                f"LLM returned movie_id {movie_id}, "
+                "which was not in the candidate set."
+            )
+
+        returned_ids.append(movie_id)
+
+        try:
+            score = float(result["score"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Invalid score for movie_id {movie_id}: "
+                f"{result['score']}"
+            ) from exc
+
+        if not 0 <= score <= 1:
+            raise ValueError(
+                f"Score for movie_id {movie_id} "
+                "must be between 0 and 1."
+            )
+
+    if len(returned_ids) != len(set(returned_ids)):
+        raise ValueError(
+            "LLM returned duplicate movie IDs."
+        )
+
+    returned_id_set = set(returned_ids)
+
+    if returned_id_set != candidate_ids:
+        missing_ids = candidate_ids - returned_id_set
+
+        raise ValueError(
+            f"LLM omitted candidate movie IDs: "
+            f"{sorted(missing_ids)}"
+        )
+
+    expected_ranks = set(
+        range(1, len(candidates_df) + 1)
+    )
+
+    returned_ranks = {
+        int(result["rank"])
+        for result in reranked_results
+    }
+
+    if returned_ranks != expected_ranks:
+        raise ValueError(
+            "LLM returned invalid ranking values. "
+            f"Expected ranks: {sorted(expected_ranks)}"
+        )
+
+    return True
+
+
+def rerank_candidates(
+    user_id,
+    ratings_df,
+    movies_df,
+    candidates_df,
+    client=None,
+):
+    """
+    Run the complete LLM reranking pipeline.
+
+    Steps:
+    1. Build user preference context.
+    2. Format recommendation candidates.
+    3. Build reranking prompt.
+    4. Call Claude through Amazon Bedrock.
+    5. Parse the JSON response.
+    6. Validate the returned ranking.
+
+    Returns
+    -------
+    list[dict]
+        Reranked candidate movies.
+    """
+
+    if candidates_df is None or candidates_df.empty:
+        return []
+
+    user_context = build_user_context(
+        user_id=user_id,
+        ratings_df=ratings_df,
+        movies_df=movies_df,
+    )
+
+    candidate_context = format_candidates(
+        candidates_df
+    )
+
+    prompt = build_reranking_prompt(
+        user_context=user_context,
+        candidate_context=candidate_context,
+    )
+
+    raw_response = call_llm_reranker(
+        prompt=prompt,
+        client=client,
+    )
+
+    try:
+        reranked_results = json.loads(
+            raw_response
+        )
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "LLM returned invalid JSON.\n\n"
+            f"Raw response:\n{raw_response}"
+        ) from exc
+
+    validate_reranked_results(
+        reranked_results=reranked_results,
+        candidates_df=candidates_df,
+    )
+
+    reranked_results = sorted(
+        reranked_results,
+        key=lambda x: int(x["rank"]),
+    )
+
+    return reranked_results
