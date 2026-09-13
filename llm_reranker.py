@@ -1,6 +1,11 @@
 import json
 
-from rag_chat import get_anthropic_client, CHAT_MODEL
+from google import genai
+from google.genai import types
+
+
+# We already verified that this model works with your API key.
+GEMINI_MODEL = "gemini-3.6-flash"
 
 
 def build_user_context(
@@ -66,10 +71,12 @@ def build_user_context(
             f"Rating: {row['rating']}/5"
         )
 
-    context_lines.extend([
-        "",
-        "Movies the user disliked:",
-    ])
+    context_lines.extend(
+        [
+            "",
+            "Movies the user disliked:",
+        ]
+    )
 
     for _, row in disliked_movies.iterrows():
         context_lines.append(
@@ -170,7 +177,7 @@ suggests a better ordering.
 
 {candidate_context}
 
-Return the reranked movies in JSON format only.
+Return the reranked movies as JSON.
 
 Use exactly this structure:
 
@@ -193,11 +200,20 @@ Requirements:
 - score must be between 0 and 1.
 - Keep each reason concise.
 - Return valid JSON only.
-- Do not include markdown fences.
-- Do not include any text before or after the JSON.
 """
 
     return prompt.strip()
+
+
+def get_gemini_client():
+    """
+    Create a Gemini client.
+
+    The SDK automatically reads GEMINI_API_KEY
+    from the environment.
+    """
+
+    return genai.Client()
 
 
 def call_llm_reranker(
@@ -205,29 +221,33 @@ def call_llm_reranker(
     client=None,
 ):
     """
-    Send the reranking prompt to Claude through Amazon Bedrock.
+    Send the reranking prompt to Google Gemini.
 
     Returns
     -------
     str
-        Raw text returned by the LLM.
+        Raw JSON text returned by Gemini.
     """
 
     if client is None:
-        client = get_anthropic_client()
+        client = get_gemini_client()
 
-    response = client.messages.create(
-        model=CHAT_MODEL,
-        max_tokens=1500,
-        messages=[
-            {
-                "role": "user",
-                "content": prompt,
-            }
-        ],
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            temperature=0.2,
+            max_output_tokens=4000,
+        ),
     )
 
-    return response.content[0].text.strip()
+    if not response.text:
+        raise ValueError(
+            "Gemini returned an empty response."
+        )
+
+    return response.text.strip()
 
 
 def validate_reranked_results(
@@ -282,6 +302,14 @@ def validate_reranked_results(
 
         movie_id = result["movie_id"]
 
+        # Normalize numeric IDs in case Gemini returns them
+        # as strings instead of integers.
+        try:
+            movie_id = int(movie_id)
+            result["movie_id"] = movie_id
+        except (TypeError, ValueError):
+            pass
+
         if movie_id not in candidate_ids:
             raise ValueError(
                 f"LLM returned movie_id {movie_id}, "
@@ -292,6 +320,7 @@ def validate_reranked_results(
 
         try:
             score = float(result["score"])
+            result["score"] = score
         except (TypeError, ValueError) as exc:
             raise ValueError(
                 f"Invalid score for movie_id {movie_id}: "
@@ -303,6 +332,14 @@ def validate_reranked_results(
                 f"Score for movie_id {movie_id} "
                 "must be between 0 and 1."
             )
+
+        try:
+            result["rank"] = int(result["rank"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Invalid rank for movie_id {movie_id}: "
+                f"{result['rank']}"
+            ) from exc
 
     if len(returned_ids) != len(set(returned_ids)):
         raise ValueError(
@@ -324,7 +361,7 @@ def validate_reranked_results(
     )
 
     returned_ranks = {
-        int(result["rank"])
+        result["rank"]
         for result in reranked_results
     }
 
@@ -351,7 +388,7 @@ def rerank_candidates(
     1. Build user preference context.
     2. Format recommendation candidates.
     3. Build reranking prompt.
-    4. Call Claude through Amazon Bedrock.
+    4. Call Google Gemini.
     5. Parse the JSON response.
     6. Validate the returned ranking.
 
@@ -388,9 +425,10 @@ def rerank_candidates(
         reranked_results = json.loads(
             raw_response
         )
+
     except json.JSONDecodeError as exc:
         raise ValueError(
-            "LLM returned invalid JSON.\n\n"
+            "Gemini returned invalid JSON.\n\n"
             f"Raw response:\n{raw_response}"
         ) from exc
 

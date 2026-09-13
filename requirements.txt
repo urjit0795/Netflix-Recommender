@@ -5,5 +5,4 @@ numpy
 matplotlib
 sentence-transformers
 faiss-cpu
-anthropic[bedrock]
-boto3
+google-genai
