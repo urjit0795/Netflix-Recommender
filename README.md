@@ -19,13 +19,13 @@ User
          ↓
    Sentence Transformers
          ↓
-        FAISS
+       FAISS
          ↓
    Candidate Movies
          ↓
    Context Engineering
          ↓
-     LLM Reranker 🚧
+    LLM Reranker ✅
          ↓
  Final Recommendations
 ```
@@ -46,21 +46,21 @@ The architecture follows a simple idea:
 
 ## ✨ Current Features
 
-| Feature                             | Status |
-| ----------------------------------- | ------ |
-| Popularity-Based Recommendations    | ✅      |
-| Content-Based Filtering             | ✅      |
-| Collaborative Filtering             | ✅      |
-| Hybrid Recommendations              | ✅      |
-| Precision@K / Recall@K              | ✅      |
-| Sentence Transformer Embeddings     | ✅      |
-| Semantic Search                     | ✅      |
-| FAISS Vector Search                 | ✅      |
-| Conversational RAG                  | ✅      |
-| GenRec-Inspired Context Engineering | ✅      |
-| LLM Reranking                       | 🚧     |
-| LLM / Ranking Evaluation            | ⏳      |
-| Recommendation Agent                | ⏳      |
+| Feature | Status |
+| --- | --- |
+| Popularity-Based Recommendations | ✅ |
+| Content-Based Filtering | ✅ |
+| Collaborative Filtering | ✅ |
+| Hybrid Recommendations | ✅ |
+| Precision@K / Recall@K | ✅ |
+| Sentence Transformer Embeddings | ✅ |
+| Semantic Search | ✅ |
+| FAISS Vector Search | ✅ |
+| Conversational RAG | ✅ |
+| GenRec-Inspired Context Engineering | ✅ |
+| Gemini LLM Reranker | ✅ |
+| LLM / Ranking Evaluation | ⏳ |
+| Recommendation Agent | ⏳ |
 
 ---
 
@@ -144,9 +144,7 @@ This keeps the response grounded in the recommendation catalog while allowing na
 
 ## 4️⃣ GenRec-Inspired LLM Reranking
 
-The latest stage of the project explores a different role for LLMs:
-
-### Instead of asking an LLM to retrieve recommendations, use it to rank good candidates.
+The latest stage of the project uses an **LLM as a contextual reranker rather than as the primary retrieval system**.
 
 The approach is inspired by Netflix's **GenRec** work on generative recommendation ranking.
 
@@ -164,7 +162,8 @@ Candidate Movies
                        ↓
                 Reranking Context
                        ↓
-                  LLM Reranker
+                  Gemini LLM
+                    Reranker
                        ↓
                   Final Ranking
 ```
@@ -172,16 +171,20 @@ Candidate Movies
 The reranker receives two important pieces of context:
 
 **User context**
-
-* Movies the user rated highly
-* Movies the user disliked
-* Genre and preference signals
+- Movies the user rated highly
+- Movies the user disliked
+- Genre and preference signals
 
 **Candidate context**
+- Candidate movie metadata
+- Existing recommendation scores
+- Relevant retrieval information
 
-* Candidate movie metadata
-* Existing recommendation scores
-* Relevant retrieval information
+The LLM then reranks the retrieved candidates and returns:
+
+- Final rank
+- Relevance score
+- Short explanation for the ranking decision
 
 This allows the LLM to reason over a **small, high-quality candidate set** rather than the entire catalog.
 
@@ -203,14 +206,18 @@ LLM → Contextual Reasoning + Reranking
 
 This creates a hybrid system where traditional recommendation techniques and generative AI complement each other.
 
+Importantly, the LLM does not replace the existing recommendation system. It operates as a downstream ranking layer over candidates already identified by retrieval and recommendation models.
+
 ---
 
 ## 📊 Evaluation
 
 Currently implemented:
 
-* Precision@K
-* Recall@K
+- Precision@K
+- Recall@K
+
+These metrics are currently used to evaluate the traditional recommendation pipeline.
 
 The next phase will compare:
 
@@ -224,27 +231,27 @@ LLM-Reranked Recommendations
 
 Planned evaluation includes:
 
-* NDCG@K
-* Ranking quality
-* LLM-as-a-Judge relevance
-* Latency
-* LLM inference cost
+- NDCG@K
+- Ranking quality
+- LLM-as-a-Judge relevance
+- Latency
+- LLM inference cost
 
-The goal is not simply to add an LLM, but to determine whether it **measurably improves recommendation quality**.
+The goal is not simply to add an LLM, but to determine whether it **measurably improves recommendation quality** and under what conditions the additional inference cost is justified.
 
 ---
 
 ## 🛠️ Tech Stack
 
-| Area             | Technologies              |
-| ---------------- | ------------------------- |
-| Language         | Python                    |
-| Machine Learning | Scikit-learn              |
-| Data Processing  | Pandas, NumPy             |
-| Embeddings       | Sentence Transformers     |
-| Vector Search    | FAISS                     |
-| Generative AI    | LLM-based RAG & Reranking |
-| Application      | Streamlit                 |
+| Area | Technologies |
+| --- | --- |
+| Language | Python |
+| Machine Learning | Scikit-learn |
+| Data Processing | Pandas, NumPy |
+| Embeddings | Sentence Transformers |
+| Vector Search | FAISS |
+| Generative AI | Google Gemini, RAG, LLM Reranking |
+| Application | Streamlit |
 
 ---
 
@@ -263,7 +270,7 @@ Conversational RAG            ✅
           ↓
 GenRec Context Engineering    ✅
           ↓
-LLM Reranking                 🚧
+Gemini LLM Reranking          ✅
           ↓
 Ranking + LLM Evaluation      ⏳
           ↓
@@ -276,12 +283,13 @@ Recommendation Agent          ⏳
 
 This project is ultimately about answering a few practical Applied AI questions:
 
-* Where should traditional ML end and LLMs begin?
-* Should an LLM retrieve, reason, rank — or some combination of the three?
-* How much does user context affect LLM ranking?
-* Does LLM reranking actually outperform traditional recommendation methods?
-* How should LLM-powered recommendations be evaluated?
-* How do recommendation quality, latency, and inference cost trade off?
+- Where should traditional ML end and LLMs begin?
+- Should an LLM retrieve, reason, rank — or some combination of the three?
+- How much does user context affect LLM ranking?
+- Does LLM reranking actually outperform traditional recommendation methods?
+- Under what conditions does LLM reranking provide the most value?
+- How should LLM-powered recommendations be evaluated?
+- How do recommendation quality, latency, and inference cost trade off?
 
 ---
 
@@ -300,11 +308,21 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-Run the Streamlit application:
+Set your Gemini API key as an environment variable.
+
+**Windows PowerShell:**
+
+```powershell
+$env:GEMINI_API_KEY="YOUR_API_KEY"
+```
+
+Then run the Streamlit application:
 
 ```bash
 streamlit run app.py
 ```
+
+> Never commit API keys or credentials to the repository.
 
 ---
 
@@ -314,7 +332,9 @@ The LLM reranking portion of this project is inspired by Netflix's **GenRec** re
 
 Rather than reproducing Netflix's production system, this project experiments with the underlying idea at a smaller scale:
 
-**retrieve strong candidates first, then use an LLM to reason about their final ranking.**
+> **Retrieve strong candidates first, then use an LLM to reason about their final ranking.**
+
+The next stage of the project will evaluate whether this additional reasoning layer actually produces better rankings and whether the improvement justifies the additional latency and inference cost.
 
 ---
 
